@@ -124,7 +124,7 @@ bot.command("run", async (ctx) => {
 
   const chatId = getChatId(ctx);
   const state = await getOrCreateState(chatId);
-  await startOrReplaceRun(ctx, state, prompt);
+  triggerRun(ctx, state, prompt);
 });
 
 bot.on(message("text"), async (ctx, next) => {
@@ -136,7 +136,7 @@ bot.on(message("text"), async (ctx, next) => {
 
   const chatId = getChatId(ctx);
   const state = await getOrCreateState(chatId);
-  await startOrReplaceRun(ctx, state, text);
+  triggerRun(ctx, state, text);
 });
 
 bot.on("callback_query", async (ctx) => {
@@ -201,7 +201,7 @@ bot.on("callback_query", async (ctx) => {
     await ctx.answerCbQuery("Submitted");
 
     const chatState = await getOrCreateState(state.chatId);
-    await startOrReplaceRun(
+    triggerRun(
       ctx,
       chatState,
       `User answered question \"${state.question}\" with: ${selected.join(", ")}`,
@@ -251,6 +251,12 @@ async function startOrReplaceRun(ctx: Context, state: ChatState, prompt: string)
       state.activeRun = undefined;
     }
   }
+}
+
+function triggerRun(ctx: Context, state: ChatState, prompt: string): void {
+  void startOrReplaceRun(ctx, state, prompt).catch((error) => {
+    console.error("Run failed:", error);
+  });
 }
 
 async function runPrompt(
