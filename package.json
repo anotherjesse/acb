@@ -1,23 +1,28 @@
 {
   "name": "rc",
   "version": "1.0.0",
-  "description": "Codex SDK + Telegram control bot",
+  "description": "Matrix MetaOrchestrator + AgentBridge for Codex",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "dev": "tsx src/index.ts",
+    "dev": "tsx src/meta-orchestrator/index.ts",
+    "dev:orchestrator": "tsx src/meta-orchestrator/index.ts",
+    "dev:bridge": "tsx src/agent-bridge/index.ts",
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/index.js"
+    "start": "node dist/meta-orchestrator/index.js",
+    "start:orchestrator": "node dist/meta-orchestrator/index.js",
+    "start:bridge": "node dist/agent-bridge/index.js",
+    "test": "tsx --test $(find src -name '*.test.ts' -print)"
   },
   "keywords": [
     "codex",
-    "telegram",
+    "matrix",
     "typescript"
   ],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@openai/codex-sdk": "^0.9.0",
+    "@openai/codex-sdk": "^0.98.0",
     "dotenv": "^17.2.3",
     "telegraf": "^4.16.3",
     "zod": "^4.1.12"

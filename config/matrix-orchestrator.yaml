@@ -1,0 +1,37 @@
+homeserver_url: https://spark-services--test.loop.work/_matrix/static/
+bot_user_id: "@codebot:test.spark-services"
+bot_access_token: "replace_with_matrix_access_token"
+
+workspace:
+  name: Coding
+  topic: Codex Matrix workspace
+  team_members:
+    - "@you:test.spark-services"
+
+runtime:
+  state_file: data/orchestrator-state.json
+  bridge_entrypoint: /spark/proj/agent-bridge/dist/index.js
+  bridge_workdir: /work
+  sync_timeout_ms: 30000
+  keep_error_rooms: false
+
+projects:
+  - key: rc
+    display_name: rc
+    repo: git@github.com:yourorg/rc.git
+    default_branch: main
+    matrix:
+      lobby_room_name: "#lobby"
+      task_room_prefix: "#agent"
+    spark:
+      project: rc
+      base: spark-base-coding
+      main_spark: rc-main
+      fork_mode: spark_fork
+      work:
+        volume: work-rc-main
+        mount_path: /work
+      bootstrap:
+        script_if_exists: scripts/bootstrap.sh
+        timeout_sec: 1800
+        retries: 1
