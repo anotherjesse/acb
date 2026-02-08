@@ -9,6 +9,8 @@ A Telegram bot that controls a local `@openai/codex-sdk` session per chat.
 - Maintains one Codex thread per Telegram chat and persists thread IDs.
 - Supports inline multi-select follow-up questions via Telegram inline keyboards.
 - Supports run interruption and quick prompt replacement.
+- Supports Telegram voice/audio transcription via OpenAI Audio Transcriptions API (`gpt-4o-transcribe`).
+- Sends a spoken MP3 version of the final Codex response via OpenAI TTS (`/v1/audio/speech`).
 - Supports optional YOLO mode (`danger-full-access` + `never` approvals).
 
 ## Setup
@@ -23,7 +25,7 @@ npm install
 
 ```bash
 cp .env.example .env
-# then set TELEGRAM_BOT_KEY in .env
+# then set TELEGRAM_BOT_KEY and OPENAI_API_KEY in .env
 ```
 
 3. Run in dev mode:
@@ -39,6 +41,7 @@ npm run dev
 - `/thread`: show current thread id
 - `/stop`: interrupt active run
 - plain text message: treated as prompt
+- voice note / audio file: transcribed, then sent as prompt
 
 ## Build and run
 

@@ -45,6 +45,12 @@ type ChatState = {
   activeRun?: ActiveRun;
 };
 
+type AudioPromptInput = {
+  fileId: string;
+  fileName: string;
+  mimeType?: string;
+};
+
 const storeFile = path.resolve(process.cwd(), "data", "chat-sessions.json");
 const savedSessions: Record<string, SavedSession> = loadSavedSessions();
 const chatStates = new Map<number, ChatState>();
@@ -79,6 +85,7 @@ bot.command("help", async (ctx) => {
       "/new - create a fresh Codex thread for this chat",
       "/thread - show current thread id",
       "/stop - interrupt active run",
+      "Send a voice note or audio file to transcribe and run as a prompt.",
       "Send plain text (without a command) to run it as a prompt.",
     ].join("\n"),
   );
@@ -137,6 +144,24 @@ bot.on(message("text"), async (ctx, next) => {
   const chatId = getChatId(ctx);
   const state = await getOrCreateState(chatId);
   triggerRun(ctx, state, text);
+});
+
+bot.on(message("voice"), async (ctx) => {
+  const voice = ctx.message.voice;
+  triggerAudioPrompt(ctx, {
+    fileId: voice.file_id,
+    fileName: `voice-${voice.file_unique_id}.ogg`,
+    mimeType: voice.mime_type ?? "audio/ogg",
+  });
+});
+
+bot.on(message("audio"), async (ctx) => {
+  const audio = ctx.message.audio;
+  triggerAudioPrompt(ctx, {
+    fileId: audio.file_id,
+    fileName: audio.file_name ?? `audio-${audio.file_unique_id}.mp3`,
+    mimeType: audio.mime_type,
+  });
 });
 
 bot.on("callback_query", async (ctx) => {
@@ -259,6 +284,134 @@ function triggerRun(ctx: Context, state: ChatState, prompt: string): void {
   });
 }
 
+function triggerAudioPrompt(ctx: Context, input: AudioPromptInput): void {
+  void handleAudioPrompt(ctx, input).catch((error) => {
+    console.error("Audio prompt failed:", error);
+  });
+}
+
+async function handleAudioPrompt(ctx: Context, input: AudioPromptInput): Promise<void> {
+  const chatId = getChatId(ctx);
+  const status = await ctx.reply("🎙️ Audio received. Transcribing...");
+  const pushStatus = createStatusUpdater(ctx, chatId, status.message_id);
+  void pushStatus("🎙️ Audio received. Transcribing...");
+
+  try {
+    const transcript = await transcribeTelegramAudio(ctx, input);
+    await pushStatus(`📝 Transcript\n\n${truncate(transcript, 3600)}`, true);
+
+    const state = await getOrCreateState(chatId);
+    triggerRun(ctx, state, transcript);
+  } catch (error) {
+    await pushStatus(`❌ Transcription failed\n\n${truncate(formatError(error), 3400)}`, true);
+  }
+}
+
+async function transcribeTelegramAudio(ctx: Context, input: AudioPromptInput): Promise<string> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error("Missing OPENAI_API_KEY for audio transcription.");
+  }
+
+  const fileUrl = await ctx.telegram.getFileLink(input.fileId);
+  const fileResponse = await fetch(fileUrl.toString());
+  if (!fileResponse.ok) {
+    throw new Error(`Failed to download Telegram audio (${fileResponse.status}).`);
+  }
+
+  const bytes = await fileResponse.arrayBuffer();
+  const form = new FormData();
+  form.append(
+    "file",
+    new Blob([bytes], { type: input.mimeType ?? "application/octet-stream" }),
+    input.fileName,
+  );
+  form.append("model", "gpt-4o-transcribe");
+
+  const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: form,
+  });
+
+  const bodyText = await response.text();
+  if (!response.ok) {
+    throw new Error(`Transcription API failed (${response.status}): ${truncate(bodyText, 700)}`);
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(bodyText);
+  } catch {
+    throw new Error(`Transcription API returned non-JSON response: ${truncate(bodyText, 700)}`);
+  }
+
+  if (!parsed || typeof parsed !== "object" || typeof (parsed as { text?: unknown }).text !== "string") {
+    throw new Error(`Transcription response missing text: ${truncate(bodyText, 700)}`);
+  }
+
+  const text = (parsed as { text: string }).text.trim();
+  if (!text) {
+    throw new Error("Transcription returned empty text.");
+  }
+
+  return text;
+}
+
+async function maybeSendSpeechResponse(ctx: Context, chatId: number, responseText: string): Promise<void> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    return;
+  }
+
+  const text = responseText.trim();
+  if (!text) {
+    return;
+  }
+
+  const payload = {
+    model: process.env.OPENAI_TTS_MODEL ?? "gpt-4o-mini-tts",
+    input: truncate(text, 3500),
+    voice: process.env.OPENAI_TTS_VOICE ?? "coral",
+    instructions: process.env.OPENAI_TTS_INSTRUCTIONS ?? "Speak in a cheerful and positive tone.",
+  };
+
+  const response = await fetch("https://api.openai.com/v1/audio/speech", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    console.error(`TTS API failed (${response.status}): ${truncate(detail, 700)}`);
+    return;
+  }
+
+  const bytes = await response.arrayBuffer();
+  const audioBuffer = Buffer.from(bytes);
+  if (audioBuffer.length === 0) {
+    return;
+  }
+
+  await ctx.telegram.sendAudio(
+    chatId,
+    {
+      source: audioBuffer,
+      filename: "codex-response.mp3",
+    },
+    {
+      title: "Codex response",
+      performer: "Codex",
+    },
+  );
+}
+
 async function runPrompt(
   ctx: Context,
   state: ChatState,
@@ -330,6 +483,7 @@ async function runPrompt(
 
         if (last.finalResponse) {
           await pushStatus(`✅ Done\n\n${truncate(last.finalResponse)}`, true);
+          await maybeSendSpeechResponse(ctx, chatId, last.finalResponse);
           await maybeAskQuestion(ctx, chatId, last.finalResponse);
           return;
         }
