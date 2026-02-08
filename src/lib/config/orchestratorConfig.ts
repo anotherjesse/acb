@@ -64,7 +64,8 @@ const projectSchema = z.object({
 const rawSchema = z.object({
   homeserver_url: z.string().min(1),
   bot_user_id: z.string().min(1),
-  bot_access_token: z.string().min(1),
+  bot_access_token: z.string().min(1).optional(),
+  bot_password: z.string().min(1).optional(),
   workspace: z.object({
     name: z.string().min(1),
     topic: z.string().optional(),
@@ -72,6 +73,14 @@ const rawSchema = z.object({
   }),
   runtime: runtimeSchema.optional(),
   projects: z.array(projectSchema).min(1),
+}).superRefine((value, ctx) => {
+  if (!value.bot_access_token && !value.bot_password) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Either bot_access_token or bot_password must be configured.",
+      path: ["bot_access_token"],
+    });
+  }
 });
 
 export type OrchestratorProjectConfig = {
@@ -104,7 +113,8 @@ export type OrchestratorConfig = {
   configPath: string;
   homeserverUrl: string;
   botUserId: string;
-  botAccessToken: string;
+  botAccessToken?: string;
+  botPassword?: string;
   workspace: {
     name: string;
     topic?: string;
@@ -189,6 +199,7 @@ export function loadOrchestratorConfig(overridePath?: string): OrchestratorConfi
     homeserverUrl: normalizeHomeserverUrl(raw.homeserver_url),
     botUserId: raw.bot_user_id,
     botAccessToken: raw.bot_access_token,
+    botPassword: raw.bot_password,
     workspace: {
       name: raw.workspace.name,
       topic: raw.workspace.topic,

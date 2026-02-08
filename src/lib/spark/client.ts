@@ -76,7 +76,7 @@ export class SparkClient {
       `  git checkout ${shellQuote(options.branch)}`,
       `  git reset --hard ${shellQuote(`origin/${options.branch}`)}`,
       "fi",
-    ].join("; ");
+    ].join("\n");
 
     this.runSparkExec(options.project, options.sparkName, ["/bin/bash", "-lc", script], {
       timeoutMs: 5 * 60_000,
@@ -100,7 +100,7 @@ export class SparkClient {
         `if [ -f ${shellQuote(fullScript)} ]; then`,
         `  ${shellQuote(fullScript)}`,
         "fi",
-      ].join("; ");
+      ].join("\n");
 
       try {
         this.runSparkExec(options.project, options.sparkName, ["/bin/bash", "-lc", script], {

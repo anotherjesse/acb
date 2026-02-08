@@ -89,3 +89,80 @@ test("loadOrchestratorConfig rejects unsupported fork mode", () => {
 
   assert.throws(() => loadOrchestratorConfig(file), /unsupported fork_mode/i);
 });
+
+test("loadOrchestratorConfig accepts password auth without access token", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rc-config-"));
+  const file = path.join(dir, "matrix-orchestrator.yaml");
+
+  fs.writeFileSync(
+    file,
+    [
+      "homeserver_url: https://matrix.example.com",
+      'bot_user_id: "@codebot:example.com"',
+      'bot_password: "secret-password"',
+      "workspace:",
+      "  name: Coding",
+      "  team_members:",
+      '    - "@a:example.com"',
+      "projects:",
+      "  - key: rc",
+      "    display_name: rc",
+      "    repo: git@github.com:org/rc.git",
+      "    default_branch: main",
+      "    matrix:",
+      "      lobby_room_name: '#lobby'",
+      "      task_room_prefix: '#agent'",
+      "    spark:",
+      "      project: rc",
+      "      base: spark-base-coding",
+      "      main_spark: rc-main",
+      "      fork_mode: spark_fork",
+      "      work:",
+      "        volume: work-rc-main",
+      "      bootstrap:",
+      "        script_if_exists: scripts/bootstrap.sh",
+    ].join("\n"),
+    "utf8",
+  );
+
+  const config = loadOrchestratorConfig(file);
+  assert.equal(config.botAccessToken, undefined);
+  assert.equal(config.botPassword, "secret-password");
+});
+
+test("loadOrchestratorConfig requires token or password auth", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rc-config-"));
+  const file = path.join(dir, "matrix-orchestrator.yaml");
+
+  fs.writeFileSync(
+    file,
+    [
+      "homeserver_url: https://matrix.example.com",
+      'bot_user_id: "@codebot:example.com"',
+      "workspace:",
+      "  name: Coding",
+      "  team_members:",
+      '    - "@a:example.com"',
+      "projects:",
+      "  - key: rc",
+      "    display_name: rc",
+      "    repo: git@github.com:org/rc.git",
+      "    default_branch: main",
+      "    matrix:",
+      "      lobby_room_name: '#lobby'",
+      "      task_room_prefix: '#agent'",
+      "    spark:",
+      "      project: rc",
+      "      base: spark-base-coding",
+      "      main_spark: rc-main",
+      "      fork_mode: spark_fork",
+      "      work:",
+      "        volume: work-rc-main",
+      "      bootstrap:",
+      "        script_if_exists: scripts/bootstrap.sh",
+    ].join("\n"),
+    "utf8",
+  );
+
+  assert.throws(() => loadOrchestratorConfig(file), /bot_access_token or bot_password/i);
+});

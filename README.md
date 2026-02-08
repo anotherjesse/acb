@@ -32,6 +32,8 @@ Use `config/matrix-orchestrator.yaml` as the source of truth. Example fields:
 homeserver_url: https://spark-services--test.loop.work/_matrix/static/
 bot_user_id: "@codebot:test.spark-services"
 bot_access_token: "syt_..."
+# Optional alternative:
+# bot_password: "matrix-account-password"
 workspace:
   name: Coding
   topic: Codex Matrix workspace
@@ -64,6 +66,10 @@ projects:
         timeout_sec: 1800
         retries: 1
 ```
+
+Auth notes:
+- Configure either `bot_access_token` or `bot_password`.
+- If `bot_password` is used, orchestrator performs Matrix password login at startup and injects the resulting access token into spawned bridges.
 
 Validation rules:
 

@@ -5,7 +5,7 @@ import dotenv from "dotenv";
 dotenv.config({ quiet: true });
 
 import { loadOrchestratorConfig } from "../lib/config/orchestratorConfig.js";
-import { MatrixClient } from "../lib/matrix/client.js";
+import { loginWithPassword, MatrixClient } from "../lib/matrix/client.js";
 import { SparkClient } from "../lib/spark/client.js";
 import { JsonOrchestratorStateStore } from "../lib/state/orchestratorState.js";
 import { formatError, log } from "../lib/util/log.js";
@@ -35,13 +35,19 @@ void main().catch((error) => {
 });
 
 async function main(): Promise<void> {
-  const config = loadOrchestratorConfig();
-  const stateStore = new JsonOrchestratorStateStore(config.runtime.stateFile);
+  const loadedConfig = loadOrchestratorConfig();
+  const stateStore = new JsonOrchestratorStateStore(loadedConfig.runtime.stateFile);
+  const auth = await resolveMatrixAuth(loadedConfig);
+  const config = {
+    ...loadedConfig,
+    botUserId: auth.userId,
+    botAccessToken: auth.accessToken,
+  };
 
   const matrix = new MatrixClient({
     homeserverUrl: config.homeserverUrl,
-    accessToken: config.botAccessToken,
-    botUserId: config.botUserId,
+    accessToken: auth.accessToken,
+    botUserId: auth.userId,
   });
 
   const spark = new SparkClient();
@@ -55,6 +61,8 @@ async function main(): Promise<void> {
   log("info", "Booting MetaOrchestrator.", {
     configPath: config.configPath,
     homeserverUrl: config.homeserverUrl,
+    botUserId: auth.userId,
+    authMode: auth.mode,
     projects: config.projects.map((project) => project.key),
     stateFile: config.runtime.stateFile,
   });
@@ -63,4 +71,34 @@ async function main(): Promise<void> {
   await orchestrator.runLoop(() => isRunning);
 
   log("info", "MetaOrchestrator shutdown complete.");
+}
+
+async function resolveMatrixAuth(config: ReturnType<typeof loadOrchestratorConfig>): Promise<{
+  mode: "access_token" | "password";
+  userId: string;
+  accessToken: string;
+}> {
+  if (config.botAccessToken) {
+    return {
+      mode: "access_token",
+      userId: config.botUserId,
+      accessToken: config.botAccessToken,
+    };
+  }
+
+  if (!config.botPassword) {
+    throw new Error("Missing Matrix bot credentials: configure bot_access_token or bot_password.");
+  }
+
+  const login = await loginWithPassword({
+    homeserverUrl: config.homeserverUrl,
+    user: config.botUserId,
+    password: config.botPassword,
+  });
+
+  return {
+    mode: "password",
+    userId: login.user_id,
+    accessToken: login.access_token,
+  };
 }

@@ -3,6 +3,7 @@ import { normalizeHomeserverUrl } from "../util/matrixUrl.js";
 import {
   MatrixCreateRoomResponse,
   MatrixJoinedRoomsResponse,
+  MatrixLoginResponse,
   MatrixRoomMembersResponse,
   MatrixSendMessageResponse,
   MatrixSyncResponse,
@@ -18,6 +19,45 @@ type MatrixRequestOptions = {
 type SendMessageOptions = {
   threadRootEventId?: string;
 };
+
+export async function loginWithPassword(options: {
+  homeserverUrl: string;
+  user: string;
+  password: string;
+  deviceId?: string;
+}): Promise<MatrixLoginResponse> {
+  const homeserverUrl = normalizeHomeserverUrl(options.homeserverUrl);
+  const url = buildMatrixUrl(homeserverUrl, "/_matrix/client/v3/login");
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      type: "m.login.password",
+      identifier: {
+        type: "m.id.user",
+        user: options.user,
+      },
+      password: options.password,
+      device_id: options.deviceId,
+    }),
+  });
+
+  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(`Matrix password login failed (${response.status}): ${truncate(text, 1200)}`);
+  }
+
+  const login = JSON.parse(text) as MatrixLoginResponse;
+  if (!login.access_token || !login.user_id) {
+    throw new Error("Matrix password login response missing access_token/user_id.");
+  }
+
+  return login;
+}
 
 export class MatrixClient {
   readonly homeserverUrl: string;
@@ -300,41 +340,52 @@ export class MatrixClient {
   private async request<T>(method: string, endpoint: string, options: MatrixRequestOptions): Promise<T> {
     const auth = options.auth ?? true;
     const url = buildMatrixUrl(this.homeserverUrl, endpoint, options.query);
+    const maxAttempts = 5;
 
-    const headers: Record<string, string> = {
-      Accept: "application/json",
-    };
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      const headers: Record<string, string> = {
+        Accept: "application/json",
+      };
 
-    if (auth) {
-      headers.Authorization = `Bearer ${this.accessToken}`;
-    }
+      if (auth) {
+        headers.Authorization = `Bearer ${this.accessToken}`;
+      }
 
-    let body: string | undefined;
-    if (options.body !== undefined) {
-      headers["Content-Type"] = "application/json";
-      body = JSON.stringify(options.body);
-    }
+      let body: string | undefined;
+      if (options.body !== undefined) {
+        headers["Content-Type"] = "application/json";
+        body = JSON.stringify(options.body);
+      }
 
-    const response = await fetch(url, {
-      method,
-      headers,
-      body,
-    });
+      const response = await fetch(url, {
+        method,
+        headers,
+        body,
+      });
 
-    const text = await response.text();
-    if (!response.ok) {
+      const text = await response.text();
+      if (response.ok) {
+        if (!text) {
+          return undefined as T;
+        }
+
+        try {
+          return JSON.parse(text) as T;
+        } catch {
+          return text as T;
+        }
+      }
+
+      if (response.status === 429 && attempt < maxAttempts) {
+        const retryMs = extractRetryAfterMs(text, attempt);
+        await sleep(retryMs);
+        continue;
+      }
+
       throw new Error(`Matrix API ${method} ${endpoint} failed (${response.status}): ${truncate(text, 1200)}`);
     }
 
-    if (!text) {
-      return undefined as T;
-    }
-
-    try {
-      return JSON.parse(text) as T;
-    } catch {
-      return text as T;
-    }
+    throw new Error(`Matrix API ${method} ${endpoint} failed: exhausted retries`);
   }
 
   private nextTxnId(): string {
@@ -376,4 +427,23 @@ function inferViaServer(matrixUserId: string, homeserverUrl: string): string | u
   } catch {
     return undefined;
   }
+}
+
+function extractRetryAfterMs(body: string, attempt: number): number {
+  try {
+    const parsed = JSON.parse(body) as { retry_after_ms?: unknown };
+    if (typeof parsed.retry_after_ms === "number" && Number.isFinite(parsed.retry_after_ms)) {
+      return Math.max(250, Math.round(parsed.retry_after_ms));
+    }
+  } catch {
+    // ignore parse errors
+  }
+
+  return Math.min(8_000, 500 * attempt);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
