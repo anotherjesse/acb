@@ -12,6 +12,8 @@ A Telegram bot that controls a local `@openai/codex-sdk` session per chat.
 - Supports Telegram voice/audio transcription via OpenAI Audio Transcriptions API (`gpt-4o-transcribe`).
 - Sends a spoken MP3 version of the final Codex response via OpenAI TTS (`/v1/audio/speech`).
 - Supports optional YOLO mode (`danger-full-access` + `never` approvals).
+- Optionally auto-registers each host/repo location into a Telegram forum supergroup topic and posts startup metadata.
+- Emits structured CLI logs with configurable `LOG_LEVEL` (`debug|info|warn|error`).
 
 ## Setup
 
@@ -40,6 +42,8 @@ npm run dev
 - `/new`: start a fresh thread for the current chat
 - `/thread`: show current thread id
 - `/stop`: interrupt active run
+- `/chatid`: print the current Telegram chat id (+ topic thread id when present)
+- `/announce`: manually post location metadata to the configured forum topic
 - plain text message: treated as prompt
 - voice note / audio file: transcribed, then sent as prompt
 
@@ -53,4 +57,6 @@ npm start
 ## Notes
 
 - Session IDs are persisted at `data/chat-sessions.json`.
+- Location-to-topic mappings are persisted at `data/location-topics.json`.
 - This project uses `TELEGRAM_BOT_KEY` directly, matching your current `.env` key name.
+- For auto-registration, set `TELEGRAM_FORUM_CHAT_ID` to your forum-enabled supergroup id (usually like `-100...`) and give the bot topic-management rights.
