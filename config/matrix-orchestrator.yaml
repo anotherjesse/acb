@@ -1,8 +1,8 @@
 homeserver_url: https://spark-services--test.loop.work/_matrix/static/
 bot_user_id: "@codexbot:test.spark-services"
-# bot_access_token: "replace_with_matrix_access_token"
+bot_access_token: "replace_with_matrix_access_token"
 # Optional alternative to bot_access_token:
-bot_password: "12912321912jasdjf"
+# bot_password: "replace_with_matrix_password"
 
 workspace:
   name: Coding

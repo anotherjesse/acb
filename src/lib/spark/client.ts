@@ -27,6 +27,50 @@ export class SparkClient {
     this.runSpark(["--version"]);
   }
 
+  listBaseNames(): string[] {
+    const result = this.runSpark(["base", "list"]);
+    const lines = result.stdout.split(/\r?\n/).map((line) => line.trim());
+
+    const names: string[] = [];
+    for (const line of lines) {
+      if (!line || line.startsWith("Usage:") || line.startsWith("NAME") || line.startsWith("-")) {
+        continue;
+      }
+
+      const firstColumn = line.split(/\s+/)[0];
+      if (firstColumn && firstColumn !== "NAME") {
+        names.push(firstColumn);
+      }
+    }
+
+    return [...new Set(names)];
+  }
+
+  ensureBaseFromSpark(baseName: string, sourceSpark: string): void {
+    const bases = this.listBaseNames();
+    if (bases.includes(baseName)) {
+      return;
+    }
+
+    this.runSpark(["base", "save", baseName, sourceSpark], {
+      allowAlreadyExists: true,
+      timeoutMs: 10 * 60_000,
+    });
+  }
+
+  ensureSparkForked(options: {
+    project: string;
+    sparkName: string;
+    sourceSpark: string;
+    tags?: Record<string, string>;
+  }): void {
+    const args = ["create", options.sparkName, "--project", options.project, "--fork", options.sourceSpark];
+    for (const [key, value] of Object.entries(options.tags ?? {})) {
+      args.push("-t", `${key}=${value}`);
+    }
+    this.runSpark(args, { allowAlreadyExists: true });
+  }
+
   ensureWorkVolume(project: string, volume: string): void {
     this.runSpark(["data", "create", volume, "--project", project], {
       allowAlreadyExists: true,

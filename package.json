@@ -8,6 +8,7 @@
     "dev": "tsx src/meta-orchestrator/index.ts",
     "dev:orchestrator": "tsx src/meta-orchestrator/index.ts",
     "dev:bridge": "tsx src/agent-bridge/index.ts",
+    "init-dev": "tsx src/meta-orchestrator/init-dev.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/meta-orchestrator/index.js",
     "start:orchestrator": "node dist/meta-orchestrator/index.js",

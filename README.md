@@ -108,6 +108,18 @@ Bridge-only local run (usually launched by orchestrator in Spark):
 npm run dev:bridge
 ```
 
+One-shot dev bootstrap (create/reconcile missing Matrix + Spark resources, then exit):
+
+```bash
+npm run init-dev
+```
+
+`init-dev` behavior:
+- Verifies Spark + Matrix connectivity.
+- Seeds missing `main_spark` by forking from `INIT_DEV_SOURCE_SPARK` (default: `dev`).
+- Optional base fallback: set `INIT_DEV_ALLOW_BASE_SAVE=true` to create missing configured bases from source spark via `spark base save`.
+- Runs the same reconcile path as orchestrator startup to create/update workspace/project/lobby/main-spark/work-volume resources.
+
 Production build:
 
 ```bash
