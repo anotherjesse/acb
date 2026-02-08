@@ -66,7 +66,7 @@ export class SparkClient {
   }): void {
     const args = ["create", options.sparkName, "--project", options.project, "--fork", options.sourceSpark];
     for (const [key, value] of Object.entries(options.tags ?? {})) {
-      args.push("-t", `${key}=${value}`);
+      args.push("-t", buildSparkTagArg(key, value));
     }
     this.runSpark(args, { allowAlreadyExists: true });
   }
@@ -241,7 +241,7 @@ export function buildSparkCreateForkArgs(options: {
 }): string[] {
   const args = ["create", options.taskSpark, "--project", options.project, "--fork", options.mainSpark];
   for (const [key, value] of Object.entries(options.tags)) {
-    args.push("-t", `${key}=${value}`);
+    args.push("-t", buildSparkTagArg(key, value));
   }
   return args;
 }
@@ -262,4 +262,28 @@ export function buildSparkExecBridgeArgs(options: {
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'"'"'`)}'`;
+}
+
+function buildSparkTagArg(rawKey: string, rawValue: string): string {
+  const key = sanitizeSparkTagPart(rawKey, "tag");
+  const value = sanitizeSparkTagPart(rawValue, "value");
+  return `${key}=${value}`;
+}
+
+export function sanitizeSparkTagPart(raw: string, fallback: string): string {
+  const normalized = raw
+    .toLowerCase()
+    .replace(/[:/!@#\s]+/g, ".")
+    .replace(/[^a-z0-9._-]+/g, ".")
+    .replace(/[._-]{2,}/g, ".")
+    .replace(/^[^a-z0-9]+/g, "")
+    .replace(/[^a-z0-9]+$/g, "");
+
+  const base = normalized.length > 0 ? normalized : fallback;
+  if (base.length <= 63) {
+    return base;
+  }
+
+  const sliced = base.slice(0, 63).replace(/[^a-z0-9]+$/g, "");
+  return sliced.length > 0 ? sliced : fallback;
 }

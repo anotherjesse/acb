@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildSparkCreateForkArgs, buildSparkExecBridgeArgs } from "./client.js";
+import { buildSparkCreateForkArgs, buildSparkExecBridgeArgs, sanitizeSparkTagPart } from "./client.js";
 
 test("buildSparkCreateForkArgs emits expected spark fork command args", () => {
   const args = buildSparkCreateForkArgs({
@@ -22,10 +22,16 @@ test("buildSparkCreateForkArgs emits expected spark fork command args", () => {
     "--fork",
     "auth-service-main",
     "-t",
-    "matrix_room_id=!abc:example.com",
+    "matrix_room_id=abc.example.com",
     "-t",
     "matrix_project=auth-service",
   ]);
+});
+
+test("sanitizeSparkTagPart normalizes unsafe spark tag characters", () => {
+  assert.equal(sanitizeSparkTagPart("sparks:dev", "value"), "sparks.dev");
+  assert.equal(sanitizeSparkTagPart("!abc:example.com", "value"), "abc.example.com");
+  assert.equal(sanitizeSparkTagPart("MATRIX_ROOM_ID", "tag"), "matrix_room_id");
 });
 
 test("buildSparkExecBridgeArgs emits expected spark exec command args", () => {
