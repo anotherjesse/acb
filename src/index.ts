@@ -275,63 +275,86 @@ async function runPrompt(
   const typingInterval = setInterval(() => {
     void ctx.telegram.sendChatAction(chatId, "typing").catch(() => {});
   }, 4000);
-
-  const last = {
-    command: "",
-    reasoning: "",
-    finalResponse: "",
-  };
-
-  let streamError: string | null = null;
-
+  const maxAttempts = 2;
   try {
-    const { events } = await state.thread.runStreamed(prompt, {
-      signal: abortController.signal,
-    });
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      const last = {
+        command: "",
+        reasoning: "",
+        finalResponse: "",
+      };
+      let streamError: string | null = null;
 
-    for await (const event of events) {
-      const display = eventToStatus(event, last);
-      if (display) {
-        pushStatus(display);
+      try {
+        const { events } = await state.thread.runStreamed(prompt, {
+          signal: abortController.signal,
+        });
+
+        for await (const event of events) {
+          const display = eventToStatus(event, last);
+          if (display) {
+            pushStatus(display);
+          }
+
+          if (event.type === "thread.started") {
+            const key = String(chatId);
+            savedSessions[key] = { threadId: event.thread_id };
+            saveSessions();
+          }
+
+          if (event.type === "item.completed" && event.item.type === "agent_message") {
+            last.finalResponse = event.item.text;
+          }
+
+          if (event.type === "turn.failed") {
+            streamError = event.error.message;
+          }
+
+          if (event.type === "error") {
+            streamError = event.message;
+          }
+        }
+
+        if (streamError) {
+          if (attempt < maxAttempts && isStaleResumeError(streamError)) {
+            resetThreadForChat(chatId, state);
+            await pushStatus(
+              "⚠️ Previous Codex session is unavailable. Starting a fresh session and retrying once...",
+              true,
+            );
+            continue;
+          }
+          await pushStatus(`❌ Run failed\n\n${truncate(streamError)}`, true);
+          return;
+        }
+
+        if (last.finalResponse) {
+          await pushStatus(`✅ Done\n\n${truncate(last.finalResponse)}`, true);
+          await maybeAskQuestion(ctx, chatId, last.finalResponse);
+          return;
+        }
+
+        await pushStatus("✅ Done", true);
+        return;
+      } catch (error) {
+        const message = formatError(error);
+        if (abortController.signal.aborted) {
+          await pushStatus("⛔ Run interrupted.", true);
+          return;
+        }
+
+        if (attempt < maxAttempts && isStaleResumeError(message)) {
+          resetThreadForChat(chatId, state);
+          await pushStatus(
+            "⚠️ Previous Codex session is unavailable. Starting a fresh session and retrying once...",
+            true,
+          );
+          continue;
+        }
+
+        await pushStatus(`❌ Error\n\n${truncate(message)}`, true);
+        return;
       }
-
-      if (event.type === "thread.started") {
-        const key = String(chatId);
-        savedSessions[key] = { threadId: event.thread_id };
-        saveSessions();
-      }
-
-      if (event.type === "item.completed" && event.item.type === "agent_message") {
-        last.finalResponse = event.item.text;
-      }
-
-      if (event.type === "turn.failed") {
-        streamError = event.error.message;
-      }
-
-      if (event.type === "error") {
-        streamError = event.message;
-      }
-    }
-
-    if (streamError) {
-      await pushStatus(`❌ Run failed\n\n${truncate(streamError)}`, true);
-      return;
-    }
-
-    if (last.finalResponse) {
-      await pushStatus(`✅ Done\n\n${truncate(last.finalResponse)}`, true);
-      await maybeAskQuestion(ctx, chatId, last.finalResponse);
-      return;
-    }
-
-    await pushStatus("✅ Done", true);
-  } catch (error) {
-    const message = formatError(error);
-    if (abortController.signal.aborted) {
-      await pushStatus("⛔ Run interrupted.", true);
-    } else {
-      await pushStatus(`❌ Error\n\n${truncate(message)}`, true);
     }
   } finally {
     clearInterval(typingInterval);
@@ -599,6 +622,20 @@ function saveSessions(): void {
   const dir = path.dirname(storeFile);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(storeFile, JSON.stringify(savedSessions, null, 2), "utf8");
+}
+
+function resetThreadForChat(chatId: number, state: ChatState): void {
+  state.thread = codex.startThread(threadOptionsFromEnv());
+  savedSessions[String(chatId)] = {};
+  saveSessions();
+}
+
+function isStaleResumeError(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("state db missing rollout path for thread") ||
+    normalized.includes("missing rollout path for thread")
+  );
 }
 
 function truncate(value: string, maxLen = 1200): string {
